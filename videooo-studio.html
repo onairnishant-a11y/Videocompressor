@@ -1,0 +1,659 @@
+<!DOCTYPE html>
+<!--
+  ╔══════════════════════════════════════════════════════════════════╗
+  ║          VideoStudio — 4K Browser Processing Engine              ║
+  ║  Single-file, zero-install. Drop in any browser and go.          ║
+  ╠══════════════════════════════════════════════════════════════════╣
+  ║  USAGE                                                           ║
+  ║  ─────────────────────────────────────────────────────────────   ║
+  ║  Option A — Just open this file in Chrome/Edge/Firefox.          ║
+  ║             Uses single-threaded FFmpeg (still fast).            ║
+  ║                                                                  ║
+  ║  Option B — Serve locally for MULTI-THREADED mode (faster):      ║
+  ║    npx serve .       → open http://localhost:3000                ║
+  ║    python3 -m http.server 8080 → http://localhost:8080           ║
+  ║    npx http-server . -p 8080 --cors                              ║
+  ╚══════════════════════════════════════════════════════════════════╝
+-->
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>VideoStudio — 4K Browser Processing</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            mono: ['JetBrains Mono', 'Fira Code', 'Consolas', 'monospace'],
+            sans: ['Inter', 'system-ui', 'sans-serif'],
+          }
+        }
+      }
+    }
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" crossorigin="anonymous" />
+
+  <style>
+    :root {
+      --bg:       #0d1117;
+      --surface:  #161b24;
+      --surface2: #1c2333;
+      --surface3: #212940;
+      --border:   #21293a;
+      --border2:  #2d3a52;
+      --accent:   #00d57e;
+      --accent-lo: rgba(0,213,126,0.12);
+      --accent-md: rgba(0,213,126,0.25);
+      --text:     #dde3ef;
+      --muted:    #7a8599;
+      --danger:   #f87171;
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; font-family: 'Inter', system-ui, sans-serif; }
+    body { background: var(--bg); color: var(--text); }
+    #root { min-height: 100vh; display: flex; flex-direction: column; }
+
+    ::-webkit-scrollbar { width: 5px; height: 5px; }
+    ::-webkit-scrollbar-track { background: var(--bg); }
+    ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+
+    .mono { font-family: 'JetBrains Mono', monospace; }
+    .surface  { background: var(--surface);  border: 1px solid var(--border); border-radius: 10px; }
+    .surface2 { background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; }
+    .surface3 { background: var(--surface3); border: 1px solid var(--border2); border-radius: 6px; }
+
+    .accent  { color: var(--accent); }
+    .muted   { color: var(--muted); }
+    .danger  { color: var(--danger); }
+
+    /* Upload zone */
+    .upload-zone {
+      border: 2px dashed rgba(0,213,126,0.3);
+      border-radius: 14px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      position: relative;
+    }
+    .upload-zone:hover, .upload-zone.drag-over {
+      border-color: var(--accent);
+      background: var(--accent-lo);
+    }
+    @keyframes pulse-border { 0%,100% { border-color: rgba(0,213,126,0.3); } 50% { border-color: rgba(0,213,126,0.7); } }
+    .upload-zone { animation: pulse-border 3s ease-in-out infinite; }
+    .upload-zone:hover, .upload-zone.drag-over { animation: none; }
+
+    /* Buttons */
+    .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 8px 16px; border-radius: 7px; font-size: 13px; font-weight: 500; cursor: pointer; border: none; transition: all 0.15s ease; outline: none; white-space: nowrap; }
+    .btn:disabled { opacity: 0.45; cursor: not-allowed; pointer-events: none; }
+    .btn-primary { background: var(--accent); color: #0d1117; font-weight: 600; }
+    .btn-primary:hover { filter: brightness(1.1); transform: translateY(-1px); }
+    .btn-primary:active { transform: translateY(0); }
+    .btn-secondary { background: var(--surface3); color: var(--text); border: 1px solid var(--border2); }
+    .btn-secondary:hover { background: var(--surface2); border-color: var(--accent); color: var(--accent); }
+    .btn-ghost { background: transparent; color: var(--muted); border: 1px solid var(--border); }
+    .btn-ghost:hover { color: var(--text); border-color: var(--border2); }
+    .btn-smart { background: var(--accent-lo); color: var(--accent); border: 1px solid rgba(0,213,126,0.4); font-weight: 600; }
+    .btn-smart:hover { background: var(--accent-md); }
+    .btn-smart.active { background: var(--accent); color: #0d1117; }
+    .btn-danger { background: rgba(248,113,113,0.1); color: var(--danger); border: 1px solid rgba(248,113,113,0.3); }
+    .btn-lg { padding: 11px 22px; font-size: 14px; }
+    .btn-full { width: 100%; }
+    .btn-icon { padding: 8px; }
+
+    /* Inputs */
+    .field-label { display: block; font-size: 11px; font-weight: 500; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; }
+    .inp { width: 100%; background: var(--surface3); border: 1px solid var(--border2); border-radius: 6px; padding: 8px 10px; font-size: 13px; font-family: 'JetBrains Mono', monospace; color: var(--text); outline: none; transition: border-color 0.15s; }
+    .inp:focus { border-color: var(--accent); }
+    .inp:disabled { opacity: 0.4; cursor: not-allowed; }
+    select.inp {
+      -webkit-appearance: none; appearance: none;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%237a8599' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+      background-repeat: no-repeat; background-position: right 10px center; padding-right: 28px; cursor: pointer;
+    }
+    select.inp option { background: var(--surface2); }
+    input[type=range] { -webkit-appearance: none; appearance: none; width: 100%; height: 4px; border-radius: 2px; background: var(--surface3); outline: none; cursor: pointer; }
+    input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 16px; height: 16px; border-radius: 50%; background: var(--accent); cursor: pointer; border: 2px solid var(--bg); box-shadow: 0 0 0 2px var(--accent); transition: transform 0.1s; }
+    input[type=range]::-webkit-slider-thumb:hover { transform: scale(1.2); }
+    input[type=range]:disabled::-webkit-slider-thumb { pointer-events: none; }
+
+    /* Progress & Badges */
+    .progress-track { width: 100%; height: 6px; background: var(--surface3); border-radius: 3px; overflow: hidden; }
+    .progress-fill { height: 100%; background: var(--accent); border-radius: 3px; transition: width 0.3s ease; box-shadow: 0 0 8px rgba(0,213,126,0.6); }
+    @keyframes shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
+    .progress-fill.indeterminate { width: 100%; background: linear-gradient(90deg, var(--surface3) 25%, var(--accent) 50%, var(--surface3) 75%); background-size: 200% 100%; animation: shimmer 1.5s infinite; }
+    .badge { display: inline-flex; align-items: center; gap: 4px; padding: 3px 9px; border-radius: 20px; font-size: 11px; font-weight: 500; background: var(--surface3); border: 1px solid var(--border2); color: var(--muted); }
+    .badge-accent { background: var(--accent-lo); border-color: rgba(0,213,126,0.3); color: var(--accent); }
+
+    /* Preview Box */
+    .cmd-preview { background: #0a0f18; border: 1px solid var(--border); border-radius: 7px; padding: 10px 14px; font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--muted); word-break: break-all; line-height: 1.7; max-height: 80px; overflow-y: auto; }
+    .cmd-preview span.acc { color: var(--accent); }
+    .cmd-preview span.val { color: #7dd3fc; }
+    .cmd-preview span.flag { color: #fbbf24; }
+    
+    .size-bar-track { height: 8px; background: var(--surface3); border-radius: 4px; overflow: hidden; }
+    .size-bar-fill { height: 100%; background: var(--accent); border-radius: 4px; transition: width 0.5s ease; }
+    .controls-disabled { opacity: 0.35; pointer-events: none; user-select: none; }
+    
+    /* Animations */
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .spin { animation: spin 1s linear infinite; display: inline-block; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+    .fadein { animation: fadeIn 0.25s ease forwards; }
+    @keyframes glow-pulse { 0%,100% { box-shadow: 0 0 0 0 rgba(0,213,126,0); } 50% { box-shadow: 0 0 24px 4px rgba(0,213,126,0.2); } }
+    .success-glow { animation: glow-pulse 2s ease-in-out infinite; }
+  </style>
+
+  <!-- ES Module Import Map -->
+  <script type="importmap">
+  {
+    "imports": {
+      "react": "https://esm.sh/react@18.3.1",
+      "react-dom/client": "https://esm.sh/react-dom@18.3.1/client",
+      "htm": "https://esm.sh/htm@3.1.1",
+      "@ffmpeg/ffmpeg": "https://esm.sh/@ffmpeg/ffmpeg@0.12.10",
+      "@ffmpeg/util": "https://esm.sh/@ffmpeg/util@0.12.2"
+    }
+  }
+  </script>
+</head>
+<body>
+<div id="root"></div>
+<script type="module">
+import { createElement, useState, useEffect, useRef, useMemo } from 'react';
+import { createRoot } from 'react-dom/client';
+import htm from 'htm';
+import { FFmpeg } from '@ffmpeg/ffmpeg';
+import { fetchFile, toBlobURL } from '@ffmpeg/util';
+
+const html = htm.bind(createElement);
+
+/* ─── CDN URLS ─────────────────────────────────────────── */
+const MT_BASE = 'https://unpkg.com/@ffmpeg/core-mt@0.12.6/dist/esm';
+const ST_BASE = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm';
+
+/* ─── HELPERS ───────────────────────────────────────────── */
+function formatBytes(b) {
+  if (!b || b === 0) return '0 B';
+  if (b < 1024) return b + ' B';
+  if (b < 1048576) return (b / 1024).toFixed(1) + ' KB';
+  if (b < 1073741824) return (b / 1048576).toFixed(1) + ' MB';
+  return (b / 1073741824).toFixed(2) + ' GB';
+}
+function parseTime(t) {
+  if (!t) return 0;
+  const p = t.split(':').map(Number);
+  if (p.length === 3) return p[0]*3600 + p[1]*60 + p[2];
+  if (p.length === 2) return p[0]*60 + p[1];
+  return Number(p[0]) || 0;
+}
+function toTimecode(s) {
+  const h = Math.floor(s/3600), m = Math.floor((s%3600)/60), ss = Math.floor(s%60);
+  return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(ss).padStart(2,'0')}`;
+}
+function estimateSize(bitrateMbps, startT, endT, totalDur) {
+  if (!bitrateMbps || isNaN(parseFloat(bitrateMbps))) return null;
+  const start = parseTime(startT);
+  const end   = endT ? parseTime(endT) : totalDur;
+  const dur   = Math.max(0, end - start) || totalDur;
+  return (parseFloat(bitrateMbps) * 1e6 / 8) * dur;
+}
+
+/* ─── FFMPEG COMMAND BUILDER (UPGRADED) ────────────────────── */
+const RES_MAP = {
+  '4k':'3840:2160','2k':'2560:1440','1080p':'1920:1080',
+  '720p':'1280:720','480p':'854:480','360p':'640:360','144p':'256:144',
+};
+
+function buildCommand(s) {
+  const cmd = [];
+  
+  // 1. SEEKING BEFORE INPUT (Fixes timing duration calculation)
+  if (s.startTime) cmd.push('-ss', s.startTime);
+  if (s.endTime)   cmd.push('-to', s.endTime);
+  cmd.push('-i', s.inputFileName);
+
+  // 2. AUDIO EXTRACTION BYPASS
+  if (s.audioMode === 'extract_mp3') {
+    cmd.push('-vn', '-c:a', 'libmp3lame', '-q:a', '2', s.outputFileName);
+    return cmd;
+  }
+
+  // 3. CODEC SELECTION based on User Format
+  let vCodec = 'libx264';
+  let aCodec = s.audioMode === 'mute' || s.outputFormat === 'gif' ? null : 'aac';
+  
+  if (s.outputFormat === 'webm') {
+    vCodec = 'libvpx-vp9';
+    aCodec = s.audioMode === 'mute' ? null : 'libopus';
+  } else if (s.outputFormat === 'gif') {
+    vCodec = 'gif';
+    aCodec = null; 
+  }
+
+  // 4. SMART COMPRESSION OVERRIDE
+  if (s.smartCompression) {
+    return [...cmd, '-c:v', vCodec, '-preset', 'slow', '-crf', '18', ...(aCodec ? ['-c:a', aCodec, '-b:a', '192k'] : []), s.outputFileName];
+  }
+
+  cmd.push('-c:v', vCodec);
+
+  // 5. VIDEO FILTERS (Scale & Transform)
+  const vf = [];
+  if (s.resolution !== 'original') {
+    const [w, h] = RES_MAP[s.resolution].split(':');
+    vf.push(`scale='min(${w},iw)':'min(${h},ih)':force_original_aspect_ratio=decrease,pad=ceil(iw/2)*2:ceil(ih/2)*2`);
+  }
+  if (s.transform === 'hflip') vf.push('hflip');
+  if (s.transform === 'vflip') vf.push('vflip');
+  if (s.transform === 'rotate90') vf.push('transpose=1');
+  if (s.transform === 'rotate-90') vf.push('transpose=2');
+  
+  if (vf.length > 0) {
+    cmd.push('-vf', vf.join(','));
+  }
+  
+  if (s.fps !== 'original') cmd.push('-r', String(s.fps));
+  
+  const targetBitrate = parseFloat(s.bitrate);
+  if (targetBitrate > 0) {
+    cmd.push('-b:v', `${targetBitrate}M`, '-bufsize', `${targetBitrate*2}M`);
+  } else {
+    // GIF doesn't use CRF, WebM and MP4 do.
+    if (s.outputFormat !== 'gif') cmd.push('-crf', String(s.crf), '-preset','medium');
+  }
+
+  // 6. AUDIO ENCODING
+  if (aCodec) {
+    cmd.push('-c:a', aCodec, '-b:a', '192k');
+  } else if (s.outputFormat !== 'gif') {
+    cmd.push('-an');
+  }
+
+  cmd.push(s.outputFileName);
+  return cmd;
+}
+
+function getOutput(audioMode, format) {
+  if (audioMode === 'extract_mp3') return { filename: 'output.mp3', mime: 'audio/mpeg' };
+  if (format === 'webm') return { filename: 'output.webm', mime: 'video/webm' };
+  if (format === 'gif') return { filename: 'output.gif', mime: 'image/gif' };
+  return { filename: 'output.mp4', mime: 'video/mp4' };
+}
+
+/* ─── ICON SVGS ─────────────────────────────────────────── */
+const Icon = ({ d, size=16, stroke='currentColor', fill='none', strokeW=2 }) =>
+  html`<svg width=${size} height=${size} viewBox="0 0 24 24" fill=${fill} stroke=${stroke} stroke-width=${strokeW} stroke-linecap="round" stroke-linejoin="round"><path d=${d}/></svg>`;
+
+const icons = {
+  upload:   'M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12',
+  film:     'M19.82 2H4.18A2.18 2.18 0 0 0 2 4.18v15.64A2.18 2.18 0 0 0 4.18 22h15.64A2.18 2.18 0 0 0 22 19.82V4.18A2.18 2.18 0 0 0 19.82 2zM7 2v20M17 2v20M2 12h20M2 7h5M2 17h5M17 17h5M17 7h5',
+  scissors: 'M6 3a3 3 0 1 1 0 6 3 3 0 0 1 0-6zm12 0a3 3 0 1 1 0 6 3 3 0 0 1 0-6zM8.12 8.12 12 12m0 0 3.88 3.88M12 12 8.12 15.88M12 12l3.88-3.88',
+  vol:      'M11 5 6 9H2v6h4l5 4V5zM15.54 8.46a5 5 0 0 1 0 7.07M19.07 4.93a10 10 0 0 1 0 14.14',
+  monitor:  'M20 3H4a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h16a1 1 0 0 0 1-1V4a1 1 0 0 0-1-1zM8 21h8M12 17v4',
+  gauge:    'M12 2v2m0 16v2M4.93 4.93l1.41 1.41m11.32 11.32 1.41 1.41M2 12h2m16 0h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41M12 6a6 6 0 0 0 0 12',
+  zap:      'M13 2 3 14h9l-1 8 10-12h-9l1-8z',
+  download: 'M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3',
+  check:    'M22 11.08V12a10 10 0 1 1-5.93-9.14M22 4 12 14.01l-3-3',
+  x:        'M18 6 6 18M6 6l12 12',
+  warn:     'M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0zM12 9v4M12 17h.01',
+  activity: 'M22 12h-4l-3 9L9 3l-3 9H2',
+  box:      'M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16zM3.27 6.96L12 12.01l8.73-5.05M12 22.08V12'
+};
+
+/* ─── COMMAND PREVIEW ───────────────────────────────────── */
+function CmdPreview({ settings }) {
+  const { filename: outFile } = getOutput(settings.audioMode, settings.outputFormat);
+  const full = { ...settings, inputFileName: 'input_video', outputFileName: outFile };
+  const parts = buildCommand(full);
+  return html`
+    <div class="cmd-preview">
+      <span class="acc">ffmpeg</span>
+      ${parts.map((p, i) => {
+        const isFlag = p.startsWith('-');
+        const isVal  = !isFlag && i > 0;
+        return html`<span key=${i} class=${isFlag ? 'flag' : isVal ? 'val' : ''}> ${p}</span>`;
+      })}
+    </div>
+  `;
+}
+
+/* ─── MAIN APP ───────────────────────────────────────────── */
+function App() {
+  /* FFmpeg engine */
+  const ffRef     = useRef(null);
+  const loadedRef = useRef(false);
+  const [ffStatus, setFfStatus] = useState('idle');
+  const [ffError,  setFfError]  = useState('');
+  const [isMultiThread, setIsMultiThread] = useState(false);
+
+  /* File + metadata */
+  const [file,       setFile]       = useState(null);
+  const [meta,       setMeta]       = useState(null);
+  const [inputUrl,   setInputUrl]   = useState(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const fileInputRef = useRef(null);
+  const dropRef      = useRef(null);
+
+  /* Settings */
+  const [startTime,  setStartTime]  = useState('');
+  const [endTime,    setEndTime]    = useState('');
+  const [audioMode,  setAudioMode]  = useState('keep');
+  const [outputFormat, setOutputFormat] = useState('mp4');
+  const [transform,  setTransform]  = useState('none');
+  const [resolution, setResolution] = useState('original');
+  const [fps,        setFps]        = useState('original');
+  const [crf,        setCrf]        = useState(23);
+  const [bitrate,    setBitrate]    = useState('');
+  const [smart,      setSmart]      = useState(false);
+
+  /* Processing */
+  const [procStatus, setProcStatus] = useState('idle');
+  const [procError,  setProcError]  = useState('');
+  const [progress,   setProgress]   = useState(0);
+  const [result,     setResult]     = useState(null);
+
+  useEffect(() => { document.documentElement.classList.add('dark'); }, []);
+  useEffect(() => { initFFmpeg(); }, []);
+
+  // Cleanup object URLs to prevent memory leaks
+  useEffect(() => { return () => { if (inputUrl) URL.revokeObjectURL(inputUrl); } }, [inputUrl]);
+  useEffect(() => { return () => { if (result?.url) URL.revokeObjectURL(result.url); } }, [result]);
+
+  async function initFFmpeg() {
+    setFfStatus('loading');
+    try {
+      const ff = new FFmpeg();
+      ffRef.current = ff;
+      // Cross-origin isolation required for Multi-thread
+      const mt = typeof crossOriginIsolated !== 'undefined' && crossOriginIsolated;
+      setIsMultiThread(mt);
+      
+      const base = mt ? MT_BASE : ST_BASE;
+      const [coreURL, wasmURL, workerURL] = await Promise.all([
+        toBlobURL(`${base}/ffmpeg-core.js`, 'text/javascript'),
+        toBlobURL(`${base}/ffmpeg-core.wasm`, 'application/wasm'),
+        mt ? toBlobURL(`${base}/ffmpeg-core.worker.js`, 'text/javascript') : Promise.resolve(undefined),
+      ]);
+      await ff.load(mt ? { coreURL, wasmURL, workerURL } : { coreURL, wasmURL });
+      
+      loadedRef.current = true;
+      setFfStatus('ready');
+    } catch(err) {
+      setFfStatus('error');
+      setFfError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  function extractMeta(f) {
+    return new Promise(res => {
+      const v = document.createElement('video');
+      const url = URL.createObjectURL(f);
+      v.src = url;
+      v.onloadedmetadata = () => {
+        res({ duration: v.duration, width: v.videoWidth, height: v.videoHeight });
+        URL.revokeObjectURL(url);
+      };
+      v.onerror = () => {
+        res({ duration: 0, width: 0, height: 0 });
+        URL.revokeObjectURL(url);
+      };
+    });
+  }
+
+  async function handleFile(f) {
+    if (!f) return;
+    const m = await extractMeta(f);
+    setFile(f);
+    setMeta({ ...m, size: f.size });
+    setInputUrl(URL.createObjectURL(f));
+    
+    // Reset Settings
+    setStartTime(''); setEndTime(''); setAudioMode('keep');
+    setOutputFormat('mp4'); setTransform('none');
+    setResolution('original'); setFps('original'); setCrf(23);
+    setBitrate(''); setSmart(false);
+    setProcStatus('idle'); setProcError(''); setProgress(0); setResult(null);
+  }
+
+  function onDragOver(e) { e.preventDefault(); setIsDragging(true); }
+  function onDragLeave(e) { if (!dropRef.current?.contains(e.relatedTarget)) setIsDragging(false); }
+  function onDrop(e) { e.preventDefault(); setIsDragging(false); handleFile(e.dataTransfer.files?.[0]); }
+
+  async function processVideo() {
+    if (!file || !ffRef.current || !loadedRef.current) return;
+    const ff = ffRef.current;
+    
+    setProcStatus('processing'); setProgress(0); setProcError(''); setResult(null);
+    const progHandler = ({ progress: p }) => setProgress(Math.min(99, Math.round(p * 100)));
+    ff.on('progress', progHandler);
+    
+    try {
+      const { filename: outFile, mime } = getOutput(audioMode, outputFormat);
+      const cmd = buildCommand({ startTime, endTime, audioMode, outputFormat, transform, resolution, fps, crf, bitrate: bitrate.trim(), smartCompression: smart, inputFileName: 'input_video', outputFileName: outFile });
+      
+      await ff.writeFile('input_video', await fetchFile(file));
+      await ff.exec(cmd);
+      
+      /* Safe Deep Copy Memory Extraction */
+      const raw = await ff.readFile(outFile);
+      const safeBuffer = new Uint8Array(raw.length);
+      safeBuffer.set(raw);
+      const blob = new Blob([safeBuffer.buffer], { type: mime });
+      const url = URL.createObjectURL(blob);
+      
+      /* WebAssembly Memory Cleanup */
+      try { await ff.deleteFile('input_video'); } catch(_) {}
+      try { await ff.deleteFile(outFile);       } catch(_) {}
+      
+      setProgress(100);
+      setResult({ url, filename: outFile, size: blob.size, originalSize: file.size });
+      setProcStatus('done');
+    } catch(err) {
+      setProcError(err instanceof Error ? err.message : String(err));
+      setProcStatus('error');
+    } finally {
+      ff.off('progress', progHandler);
+    }
+  }
+
+  function downloadResult() {
+    if (!result) return;
+    const a = document.createElement('a');
+    a.href = result.url; a.download = result.filename; a.click();
+  }
+
+  function resetAll() {
+    setFile(null); setMeta(null); setInputUrl(null); 
+    setProcStatus('idle'); setResult(null);
+  }
+
+  const estSize = useMemo(() => meta ? estimateSize(bitrate, startTime, endTime, meta.duration) : null, [bitrate, startTime, endTime, meta]);
+  const currentSettings = { startTime, endTime, audioMode, outputFormat, transform, resolution, fps, crf, bitrate, smartCompression: smart };
+  const controlsLocked  = procStatus === 'processing';
+
+  return html`
+    <div style="min-height:100vh;background:var(--bg);display:flex;flex-direction:column">
+      <!-- HEADER -->
+      <header style="padding:14px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;background:var(--surface)">
+        <div style="display:flex;align-items:center;gap:10px">
+          <div style="width:32px;height:32px;background:var(--accent);border-radius:8px;display:flex;align-items:center;justify-content:center">
+            <${Icon} d=${icons.film} size=${16} stroke="#0d1117" strokeW=${2.5}/>
+          </div>
+          <div>
+            <div style="font-weight:700;font-size:14px;letter-spacing:0.01em">VideoStudio</div>
+            <div style="font-size:10px;color:var(--muted);font-family:monospace">4K Browser Processing Engine</div>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          ${ffStatus === 'loading' && html`<div style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted)"><span class="spin" style="width:12px;height:12px;border:2px solid var(--border2);border-top-color:var(--accent);border-radius:50%;display:inline-block"></span> Loading engine</div>`}
+          ${ffStatus === 'ready' && html`<div class="badge badge-accent"><${Icon} d=${icons.activity} size=${11} /> ${isMultiThread ? 'Multi-thread' : 'Single-thread'}</div>`}
+          ${file && html`<button class="btn btn-ghost btn-icon" title="Reset" onclick=${resetAll}><${Icon} d=${icons.x} size=${14} /></button>`}
+        </div>
+      </header>
+
+      ${ffStatus === 'error' && html`<div style="background:rgba(248,113,113,0.08);border-bottom:1px solid rgba(248,113,113,0.2);padding:12px 20px;display:flex;gap:10px" class="fadein"><${Icon} d=${icons.warn} size=${16} stroke="var(--danger)" /><div><div style="font-size:13px;font-weight:600;color:var(--danger)">FFmpeg engine failed to load</div><div style="font-size:12px;color:var(--muted);margin-top:3px">${ffError}</div></div></div>`}
+      
+      <main style="flex:1;padding:20px;max-width:1100px;margin:0 auto;width:100%">
+        ${!file && html`
+          <div class="fadein" style="max-width:680px;margin:60px auto 0">
+            <div ref=${dropRef} class="upload-zone ${isDragging ? 'drag-over' : ''}" style="padding:70px 40px;text-align:center" ondragover=${onDragOver} ondragleave=${onDragLeave} ondrop=${onDrop} onclick=${() => fileInputRef.current?.click()}>
+              <div style="width:60px;height:60px;background:var(--surface2);border-radius:14px;display:flex;align-items:center;justify-content:center;margin:0 auto 20px"><${Icon} d=${icons.upload} size=${26} stroke="var(--accent)" strokeW=${1.5} /></div>
+              <div style="font-size:20px;font-weight:600;margin-bottom:8px">Drop video file here</div>
+              <div style="font-size:13px;color:var(--muted);margin-bottom:24px">MP4, WebM, MOV, AVI supported</div>
+              <input ref=${fileInputRef} type="file" accept="video/*" style="display:none" onchange=${e => handleFile(e.target.files?.[0])} />
+            </div>
+          </div>
+        `}
+
+        ${file && meta && html`
+          <div class="fadein" style="display:grid;grid-template-columns:300px 1fr;gap:16px;align-items:start">
+            
+            <!-- LEFT COLUMN -->
+            <div style="display:flex;flex-direction:column;gap:12px">
+              
+              <!-- LIVE PREVIEW PLAYER -->
+              <div class="surface" style="padding:12px; background:#000; display:flex; justify-content:center; align-items:center;">
+                <video src=${inputUrl} controls class="fadein" style="width:100%; max-height:220px; border-radius:6px; object-fit:contain;"></video>
+              </div>
+
+              <div class="surface" style="padding:16px">
+                <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+                  <div style="width:30px;height:30px;background:var(--accent-lo);border-radius:7px;display:flex;align-items:center;justify-content:center;flex-shrink:0"><${Icon} d=${icons.film} size=${14} stroke="var(--accent)" /></div>
+                  <div style="overflow:hidden"><div style="font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${file.name}</div></div>
+                </div>
+                <div>
+                  <div style="display:flex; justify-content:space-between; padding:4px 0"><span style="font-size:11px;color:var(--muted)">Duration</span><span class="mono" style="font-size:12px">${toTimecode(meta.duration)}</span></div>
+                  <div style="display:flex; justify-content:space-between; padding:4px 0"><span style="font-size:11px;color:var(--muted)">File size</span><span class="mono accent" style="font-size:12px">${formatBytes(meta.size)}</span></div>
+                </div>
+              </div>
+
+              <div class="surface" style="padding:14px">
+                <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px"><${Icon} d=${icons.zap} size=${13} stroke="var(--accent)" /><span style="font-size:11px;font-weight:600;text-transform:uppercase;color:var(--accent)">Smart Compression</span></div>
+                <button class="btn btn-smart btn-full ${smart ? 'active' : ''}" disabled=${controlsLocked} onclick=${() => setSmart(!smart)}>
+                  <${Icon} d=${smart ? icons.x : icons.zap} size=${13} /> ${smart ? 'Disable Smart Mode' : 'Enable Smart Compression'}
+                </button>
+              </div>
+
+              ${procStatus !== 'done' && html`
+                <button class="btn btn-primary btn-full btn-lg" disabled=${procStatus === 'processing' || ffStatus !== 'ready'} onclick=${processVideo}>
+                  ${procStatus === 'processing' ? html`<span class="spin" style="width:14px;height:14px;border:2px solid rgba(0,0,0,0.2);border-top-color:#000;border-radius:50%;display:inline-block"></span> Processing...` : html`<${Icon} d=${icons.zap} size=${14} stroke="#0d1117" strokeW=${2.5} /> Process Video`}
+                </button>
+              `}
+
+              ${procStatus === 'processing' && html`
+                <div class="surface2 fadein" style="padding:14px">
+                  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><span style="font-size:12px;color:var(--muted)">Processing</span><span class="mono accent" style="font-size:13px;font-weight:600">${progress}%</span></div>
+                  <div class="progress-track"><div class="progress-fill" style="width:${progress}%"></div></div>
+                </div>
+              `}
+
+              ${procStatus === 'error' && html`
+                <div class="surface2 fadein" style="padding:14px;border-color:rgba(248,113,113,0.3)">
+                  <div style="display:flex;gap:8px"><${Icon} d=${icons.warn} size=${14} stroke="var(--danger)" /><div><div style="font-size:12px;font-weight:600;color:var(--danger)">Failed</div><div style="font-size:11px;color:var(--muted);margin-top:3px">${procError}</div></div></div>
+                </div>
+              `}
+
+              ${procStatus === 'done' && result && html`
+                <div class="surface success-glow fadein" style="padding:16px;border-color:rgba(0,213,126,0.3)">
+                  <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px"><${Icon} d=${icons.check} size=${18} stroke="var(--accent)" /><span style="font-size:13px;font-weight:600;color:var(--accent)">Complete!</span></div>
+                  <div style="display:flex; justify-content:space-between; padding:4px 0"><span style="font-size:11px;color:var(--muted)">Output Size</span><span class="mono accent" style="font-size:12px;font-weight:600">${formatBytes(result.size)}</span></div>
+                  
+                  <!-- SUCCESS LIVE PLAYER -->
+                  ${audioMode === 'extract_mp3' 
+                    ? html`<audio src=${result.url} controls class="fadein" style="width:100%; margin:12px 0; height: 40px;"></audio>` 
+                    : outputFormat === 'gif'
+                      ? html`<img src=${result.url} class="fadein" style="width:100%; max-height:180px; object-fit:contain; border-radius:6px; margin:12px 0; background:#000;" />`
+                      : html`<video src=${result.url} controls class="fadein" style="width:100%; max-height:180px; object-fit:contain; border-radius:6px; margin:12px 0; background:#000;"></video>`
+                  }
+                  
+                  <button class="btn btn-primary btn-full" style="margin-top:4px" onclick=${downloadResult}><${Icon} d=${icons.download} size=${14} stroke="#0d1117" strokeW=${2.5} /> Download File</button>
+                </div>
+              `}
+            </div>
+
+            <!-- RIGHT COLUMN -->
+            <div style="display:flex;flex-direction:column;gap:12px">
+              
+              <div class="surface" style="padding:16px">
+                <div style="display:flex;align-items:center;gap:7px;margin-bottom:14px"><${Icon} d=${icons.box} size=${13} stroke="var(--accent)" /><span style="font-size:11px;font-weight:600;letter-spacing:0.05em;text-transform:uppercase;color:var(--accent)">Format & Transform</span></div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px" class="${smart ? 'controls-disabled' : ''}">
+                  <div>
+                    <label class="field-label">Format Converter</label>
+                    <select class="inp" disabled=${smart || controlsLocked || audioMode === 'extract_mp3'} value=${outputFormat} onchange=${e => setOutputFormat(e.target.value)}>
+                      <option value="mp4">MP4 (Universal)</option><option value="webm">WebM (VP9 Web)</option><option value="gif">GIF (Animated)</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label class="field-label">Rotate & Flip</label>
+                    <select class="inp" disabled=${smart || controlsLocked} value=${transform} onchange=${e => setTransform(e.target.value)}>
+                      <option value="none">None</option><option value="hflip">Flip Horizontal</option><option value="vflip">Flip Vertical</option><option value="rotate90">Rotate 90° CW</option><option value="rotate-90">Rotate 90° CCW</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              <div class="surface" style="padding:16px">
+                <div style="display:flex;align-items:center;gap:7px;margin-bottom:14px"><${Icon} d=${icons.scissors} size=${13} stroke="var(--accent)" /><span style="font-size:11px;font-weight:600;letter-spacing:0.05em;text-transform:uppercase;color:var(--accent)">Trim / Clip</span></div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px" class="${smart ? 'controls-disabled' : ''}">
+                  <div><label class="field-label">Start Time</label><input class="inp" type="text" placeholder="00:00:00" value=${startTime} disabled=${smart || controlsLocked} oninput=${e => setStartTime(e.target.value)} /></div>
+                  <div><label class="field-label">End Time</label><input class="inp" type="text" placeholder=${toTimecode(meta.duration)} value=${endTime} disabled=${smart || controlsLocked} oninput=${e => setEndTime(e.target.value)} /></div>
+                </div>
+              </div>
+
+              <div class="surface" style="padding:16px">
+                <div style="display:flex;align-items:center;gap:7px;margin-bottom:14px"><${Icon} d=${icons.vol} size=${13} stroke="var(--accent)" /><span style="font-size:11px;font-weight:600;letter-spacing:0.05em;text-transform:uppercase;color:var(--accent)">Audio</span></div>
+                <select class="inp ${smart ? 'controls-disabled' : ''}" disabled=${smart || controlsLocked || outputFormat === 'gif'} value=${audioMode} onchange=${e => setAudioMode(e.target.value)}>
+                  <option value="keep">Keep Original Audio</option>
+                  <option value="mute">Mute (Strip Audio Track)</option>
+                  <option value="extract_mp3">Extract Audio as MP3</option>
+                </select>
+              </div>
+
+              <div class="surface" style="padding:16px">
+                <div style="display:flex;align-items:center;gap:7px;margin-bottom:14px"><${Icon} d=${icons.monitor} size=${13} stroke="var(--accent)" /><span style="font-size:11px;font-weight:600;text-transform:uppercase;color:var(--accent)">Resolution & FPS</span></div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px" class="${smart ? 'controls-disabled' : ''}">
+                  <div>
+                    <label class="field-label">Resolution</label>
+                    <select class="inp" disabled=${smart || controlsLocked} value=${resolution} onchange=${e => setResolution(e.target.value)}>
+                      <option value="original">Original</option><option value="4k">4K (2160p)</option><option value="2k">2K (1440p)</option><option value="1080p">1080p (FHD)</option><option value="720p">720p (HD)</option><option value="480p">480p (SD)</option><option value="360p">360p</option><option value="144p">144p</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label class="field-label">Frame Rate</label>
+                    <select class="inp" disabled=${smart || controlsLocked} value=${fps} onchange=${e => setFps(e.target.value)}>
+                      <option value="original">Original FPS</option><option value="120">120 fps</option><option value="60">60 fps</option><option value="30">30 fps</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              <div class="surface" style="padding:16px">
+                <div style="display:flex;align-items:center;gap:7px;margin-bottom:14px"><${Icon} d=${icons.gauge} size=${13} stroke="var(--accent)" /><span style="font-size:11px;font-weight:600;text-transform:uppercase;color:var(--accent)">Quality & Bitrate</span></div>
+                <div class="${smart ? 'controls-disabled' : ''}">
+                  <div style="margin-bottom:14px">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><label class="field-label" style="margin-bottom:0">CRF</label><span class="mono accent" style="font-size:13px;font-weight:700">${crf}</span></div>
+                    <input type="range" min="0" max="51" step="1" value=${crf} disabled=${smart || controlsLocked || outputFormat === 'gif' || (bitrate && bitrate.trim() !== '')} oninput=${e => setCrf(Number(e.target.value))} />
+                  </div>
+                  <div>
+                    <label class="field-label">Custom Bitrate (Mbps)</label>
+                    <div style="display:flex;gap:8px"><input class="inp" type="number" min="0.1" step="0.1" placeholder="e.g. 8" value=${bitrate} disabled=${smart || controlsLocked} oninput=${e => setBitrate(e.target.value)} style="flex:1" /></div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="surface2" style="padding:14px"><${CmdPreview} settings=${currentSettings} /></div>
+            </div>
+          </div>
+        `}
+      </main>
+    </div>
+  `;
+}
+createRoot(document.getElementById('root')).render(html`<${App} />`);
+</script>
+</body>
+</html>
